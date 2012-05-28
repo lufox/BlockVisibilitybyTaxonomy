@@ -1,0 +1,37 @@
+<?php
+
+/**
+ * Implements hook_schema().
+ */
+function blocktaxonomy_schema() {
+
+  $schema['block_taxonomy_term'] = array(
+    'description' => 'Sets up display criteria for blocks based on taxonomy terms',
+    'fields' => array(
+      'module' => array(
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => "The block's origin module, from {block}.module.",
+      ),
+      'delta' => array(
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => "The block's unique delta within module, from {block}.delta.",
+      ),
+      'tid' => array(
+        'type' => 'int',
+        'length' => 10,
+        'not null' => TRUE,
+        'description' => "The tid of taxonomy term {taxonomy_term_data}.tid.",
+      ),
+    ),
+    'primary key' => array('module', 'delta', 'tid'),
+    'indexes' => array(
+      'type' => array('tid'),
+    ),
+  );
+  
+  return $schema;
+}

@@ -1,0 +1,6 @@
+name = Block Taxonomy
+description = Allows to set visibility of blocks based on taxonomy terms
+package = taxonomy
+dependencies[] = taxonomy
+version = 1.0
+core = 7.x

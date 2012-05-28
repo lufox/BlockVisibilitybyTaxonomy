@@ -1,0 +1,169 @@
+<?php
+
+/**
+ * Implements hook_form_FORMID_alter().
+ *
+ * Adds taxonomy-term specific visibility options to add block form.
+ *
+ * @see block_add_block_form()
+ */
+function blocktaxonomy_form_block_add_block_form_alter(&$form, &$form_state) {
+  blocktaxonomy_form_block_admin_configure_alter($form, $form_state);
+}
+
+/**
+ * Implements hook_form_FORMID_alter().
+ *
+ * Adds taxonomy-term specific visibility options to block configuration form.
+ *
+ * @see block_admin_configure()
+ */
+function blocktaxonomy_form_block_admin_configure_alter(&$form, &$form_state) {
+  $default_term_options = db_query("SELECT tid FROM {block_taxonomy_term} WHERE module = :module AND delta = :delta", array(
+    ':module' => $form['module']['#value'],
+    ':delta' => $form['delta']['#value'],
+  ))->fetchCol();
+  
+  $vocabularies = taxonomy_get_vocabularies();
+  $options = array();
+  foreach ($vocabularies as $vid => $vocabulary) {
+    $tree = taxonomy_get_tree($vid);
+    if ($tree && (count($tree) > 0)) {
+      $options[$vocabulary->name] = array();
+      foreach ($tree as $term) {
+        $options[$vocabulary->name][$term->tid] = str_repeat('-', $term->depth) . $term->name;
+      }
+    }
+  }
+  
+  $form['visibility']['taxonomy'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Taxonomy terms'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+    '#group' => 'visibility',
+    '#weight' => 5,
+  );
+  $form['visibility']['taxonomy']['terms'] = array(
+    '#type' => 'select',
+    '#multiple' => TRUE,
+    '#size' => 15,
+    '#title' => t('Show block only on nodes or taxonomy overviews with specific taxonomy terms'),
+    '#default_value' => $default_term_options,
+    '#options' => $options,
+    '#description' => t('Shows this block only on nodes which are assigned to the choosen taxonomy terms or matching taxonomy term pages. If you select no terms, there will be no taxonomy-specific limitation.'),
+  );
+  $form['#submit'][] = 'blocktaxonomy_form_block_admin_configure_submit';
+}
+
+/**
+ * Form submit handler for block configuration form.
+ *
+ * @see blocktaxonomy_form_block_admin_configure_alter()
+ */
+function blocktaxonomy_form_block_admin_configure_submit($form, &$form_state) {
+  db_delete('block_taxonomy_term')
+    ->condition('module', $form_state['values']['module'])
+    ->condition('delta', $form_state['values']['delta'])
+    ->execute();
+  $query = db_insert('block_taxonomy_term')->fields(array('tid', 'module', 'delta'));
+  foreach (array_filter($form_state['values']['terms']) as $tid) {
+    $query->values(array(
+      'tid' => $tid,
+      'module' => $form_state['values']['module'],
+      'delta' => $form_state['values']['delta'],
+    ));
+  }
+  $query->execute();
+}
+
+/**
+ * Implements hook_form_FORMID_alter().
+ *
+ * Adds node specific submit handler to delete custom block form.
+ *
+ * @see block_custom_block_delete()
+ */
+function blocktaxonomy_form_block_custom_block_delete_alter(&$form, &$form_state) {
+  $form['#submit'][] = 'blocktaxonomy_form_block_custom_block_delete_submit';
+}
+
+/**
+ * Form submit handler for custom block delete form.
+ *
+ * @see blocktaxonomy_form_block_custom_block_delete_alter()
+ */
+function blocktaxonomy_form_block_custom_block_delete_submit($form, &$form_state) {
+  db_delete('block_taxonomy_term')
+    ->condition('module', 'block')
+    ->condition('delta', $form_state['values']['bid'])
+    ->execute();
+}
+
+/**
+ * Implements hook_modules_uninstalled().
+ *
+ * Cleanup {block_taxonomy_term} table from modules' blocks.
+ */
+function blocktaxonomy_modules_uninstalled($modules) {
+  db_delete('block_taxonomy_term')
+    ->condition('module', $modules, 'IN')
+    ->execute();
+}
+
+/**
+ * Implements hook_block_list_alter().
+ *
+ * Check the taxonomy term specific visibilty settings.
+ * Remove the block if the visibility conditions are not met.
+ */
+function blocktaxonomy_block_list_alter(&$blocks) {
+
+  // Build an array of taxonomy terms for each block.
+  $block_taxonomy_terms = array();
+  $result = db_query("SELECT module, delta, tid FROM {block_taxonomy_term}");
+  foreach ($result as $record) {
+    $block_taxonomy_terms[$record->module][$record->delta][$record->tid] = TRUE;
+  }
+  
+  $node = menu_get_object();
+  if(!empty($node)) {
+	$nid = $node->nid;
+    $node_tids = db_query("SELECT tid FROM {taxonomy_index} WHERE nid = :nid", array(
+      ':nid' => $nid
+    ))->fetchCol();  
+  }
+  
+  foreach ($blocks as $key => $block) {
+    // If a block has no taxonomy terms associated, it is displayed on every node.
+    // For blocks with taxonomy terms associated, if the nodes taxonomy terms does not match
+    // the settings from this block, remove it from the block list.
+    if (isset($block_taxonomy_terms[$block->module][$block->delta])) {
+      if (!empty($node)) {
+        // node has no taxonomy terms, remove the block.
+        if (empty($node_tids)) {
+	       	unset($blocks[$key]);
+	       	continue;
+	    // This is a node or node edit page.
+        } else {
+	       	foreach ($node_tids as $tid) {
+	        	if (!isset($block_taxonomy_terms[$block->module][$block->delta][$tid])) {
+		        	// This block should not be displayed for this node
+		        	unset($blocks[$key]);
+		        	continue 2;
+		        }
+	        }
+        } 
+      // Show block on taxonomy overview page 
+      } else if(arg(0) == 'taxonomy' && is_int(arg(2))) {
+      	if (!isset($block_taxonomy_terms[$block->module][$block->delta][arg(2)])) {
+		  unset($blocks[$key]);
+		}
+      } else {
+        // This is not a node page and not a taxonomy term page, remove the block.
+        unset($blocks[$key]);
+        continue;
+      }
+    }
+  }
+}
