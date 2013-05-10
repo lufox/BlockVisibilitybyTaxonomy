@@ -118,7 +118,6 @@ function blocktaxonomy_modules_uninstalled($modules) {
  * Remove the block if the visibility conditions are not met.
  */
 function blocktaxonomy_block_list_alter(&$blocks) {
-
   // Build an array of taxonomy terms for each block.
   $block_taxonomy_terms = array();
   $result = db_query("SELECT module, delta, tid FROM {block_taxonomy_term}");
@@ -131,7 +130,7 @@ function blocktaxonomy_block_list_alter(&$blocks) {
 	$nid = $node->nid;
     $node_tids = db_query("SELECT tid FROM {taxonomy_index} WHERE nid = :nid", array(
       ':nid' => $nid
-    ))->fetchCol();  
+    ))->fetchCol(); 
   }
   
   foreach ($blocks as $key => $block) {
@@ -144,18 +143,19 @@ function blocktaxonomy_block_list_alter(&$blocks) {
         if (empty($node_tids)) {
 	       	unset($blocks[$key]);
 	       	continue;
-	    // This is a node or node edit page.
+	    // node or node edit page.
         } else {
 	       	foreach ($node_tids as $tid) {
-	        	if (!isset($block_taxonomy_terms[$block->module][$block->delta][$tid])) {
-		        	// This block should not be displayed for this node
-		        	unset($blocks[$key]);
+	        	if (isset($block_taxonomy_terms[$block->module][$block->delta][$tid])) {
+		        	// The block will be displayed
 		        	continue 2;
 		        }
 	        }
+	        //no tids matched, remove block
+	        unset($blocks[$key]);
         } 
-      // Show block on taxonomy overview page 
-      } else if(arg(0) == 'taxonomy' && is_int(arg(2))) {
+      // taxonomy overview page 
+      } else if(arg(0) == "taxonomy" && is_numeric(arg(2))) {
       	if (!isset($block_taxonomy_terms[$block->module][$block->delta][arg(2)])) {
 		  unset($blocks[$key]);
 		}
